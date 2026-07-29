@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planificador de Horarios - Sexto Semestre</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .grid-bg { 
+            background-image: repeating-linear-gradient(transparent, transparent 49px, #e5e7eb 50px); 
+            background-size: 100% 50px; 
+        }
+        /* Custom scrollbar para mejor apariencia */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 md:p-8 font-sans text-gray-800 h-screen overflow-hidden flex flex-col">
+    
+    <div id="root" class="h-full flex flex-col"></div>
+
+    <script type="text/babel">
+        // Base de datos de cursos y secciones extraída del "Semestral Derecho - Lima.pdf" (Sexto Semestre)
+        // Las horas se representan en formato decimal (ej: 18.25 = 18:15 hrs)
+        // Datos verificados directamente contra las imágenes del PDF oficial (Semestral Derecho - Lima, Sexto Semestre)
+        const courses = [
+            { name: "Derecho de las Obligaciones", sections: [
+                { id: "Sec 1 - Agurto Gonzales", sessions: [{day: 5, start: 11.25, end: 13.5}] },
+                { id: "Sec 2 - Agurto Gonzales", sessions: [{day: 1, start: 15, end: 17.25}] },
+                { id: "Sec 3 - Ninamanco Cordova", sessions: [{day: 3, start: 15, end: 17.25}] },
+                { id: "Sec 4 - Ninamanco Cordova", sessions: [{day: 3, start: 17.25, end: 19.5}] },
+                { id: "Sec 5 - Vigil Curo", sessions: [{day: 1, start: 18, end: 20.25}] }
+            ]},
+            { name: "Derecho Penal III (Esp. II)", sections: [
+                { id: "Sec 1 - Prado Saldarriaga", sessions: [{day: 3, start: 18, end: 20.25}] },
+                { id: "Sec 2 - Principe Trujillo", sessions: [{day: 2, start: 15.75, end: 18}] },
+                { id: "Sec 3 - Pérez López", sessions: [{day: 6, start: 19.5, end: 21.75}] },
+                { id: "Sec 4 - Por Asignar", sessions: [{day: 2, start: 14.75, end: 17}] },
+                { id: "Sec 5 - Por Asignar", sessions: [{day: 4, start: 15.25, end: 17.5}] }
+            ]},
+            { name: "Proceso Único de Ejecución", sections: [
+                { id: "Sec 1 - Canelo Rabanal", sessions: [{day: 3, start: 15, end: 18}] }, // T y P fusionados
+                { id: "Sec 2 - Canelo Rabanal", sessions: [{day: 3, start: 18, end: 21}] },
+                { id: "Sec 3 - Martinez Flores", sessions: [{day: 2, start: 8, end: 11}] },
+                { id: "Sec 4 - Ariano Deho", sessions: [{day: 4, start: 11, end: 14}] },
+                { id: "Sec 5 - Por Asignar", sessions: [{day: 4, start: 14, end: 17}] }
+            ]},
+            { name: "Derecho Administrativo II", sections: [
+                { id: "Sec 1 - Gutierrez Tudela", sessions: [{day: 2, start: 8, end: 10.25}] },
+                { id: "Sec 2 - Estela Huaman", sessions: [{day: 4, start: 18, end: 20.25}] },
+                { id: "Sec 3 - Gutierrez Tudela", sessions: [{day: 2, start: 10.25, end: 12.5}] },
+                { id: "Sec 4 - Cuba Meneses", sessions: [{day: 1, start: 16.75, end: 19}] },
+                { id: "Sec 5 - Cuba Meneses", sessions: [{day: 2, start: 18, end: 20.25}] },
+                { id: "Sec 6 - Rojas Leo", sessions: [{day: 3, start: 17.5, end: 19.75}] }
+            ]},
+            { name: "Derecho Mercantil III", sections: [
+                { id: "Sec 1 - Beaumont Callirgos", sessions: [{day: 1, start: 11, end: 13.25}] },
+                { id: "Sec 2 - Figueroa Bustamante", sessions: [{day: 4, start: 9.5, end: 11.75}] },
+                { id: "Sec 3 - Figueroa Bustamante", sessions: [{day: 1, start: 8.75, end: 11}] },
+                { id: "Sec 4 - Ramos Padilla", sessions: [{day: 3, start: 10.25, end: 12.5}] },
+                { id: "Sec 5 - Figueroa Bustamante", sessions: [{day: 4, start: 11, end: 13.25}] }
+            ]},
+            { name: "Derecho Individual Trabajo", sections: [
+                { id: "Sec 1 - Gamarra Vilchez", sessions: [{day: 5, start: 8, end: 10.25}] },
+                { id: "Sec 2 - Caballero Sega", sessions: [{day: 6, start: 7.75, end: 10}] },
+                { id: "Sec 3 - Huancahuari Flores", sessions: [{day: 3, start: 18, end: 20.25}] },
+                { id: "Sec 4 - Por Asignar", sessions: [{day: 4, start: 8, end: 10.25}] },
+                { id: "Sec 5 - Por Asignar", sessions: [{day: 3, start: 14, end: 16.25}] }
+            ]},
+            { name: "Derecho Procesal Penal II", sections: [
+                { id: "Sec 1 - Camarena Aliaga", sessions: [{day: 4, start: 19, end: 22}] },
+                { id: "Sec 2 - Tapia Cabañin", sessions: [{day: 2, start: 8, end: 11}] },
+                { id: "Sec 3 - Tapia Cabañin", sessions: [{day: 4, start: 15, end: 18}] },
+                { id: "Sec 4 - Mavila León", sessions: [{day: 1, start: 9, end: 12}] },
+                { id: "Sec 5 - Cubas Villanueva", sessions: [{day: 2, start: 9, end: 12}] },
+                { id: "Sec 6 - Arbulu Martinez", sessions: [{day: 2, start: 18, end: 21}] }
+            ]}
+        ];
+
+        const daysOfWeek = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+        // Paleta de colores para diferenciar fácilmente cada curso
+        const blockColors = ["bg-blue-100 border-blue-400", "bg-emerald-100 border-emerald-400", "bg-amber-100 border-amber-400", "bg-purple-100 border-purple-400", "bg-rose-100 border-rose-400", "bg-indigo-100 border-indigo-400", "bg-cyan-100 border-cyan-400"];
+
+        // Función auxiliar para convertir hora decimal (18.25) a texto (18:15)
+        const formatTime = (decimalTime) => {
+            const hrs = Math.floor(decimalTime);
+            const mins = Math.round((decimalTime % 1) * 60);
+            const minsStr = mins === 0 ? '00' : mins.toString().padStart(2, '0');
+            return `${hrs}:${minsStr}`;
+        };
+
+        function TimetableApp() {
+            // Estado para almacenar las secciones seleccionadas por el usuario
+            const [selections, setSelections] = React.useState({});
+
+            // Actualiza el estado cuando se selecciona una opción en el menú
+            const handleSelect = (courseName, sectionId) => {
+                setSelections(prev => ({ ...prev, [courseName]: sectionId }));
+            };
+
+            // Filtrar y preparar las sesiones de los cursos seleccionados
+            const activeSessions = [];
+            courses.forEach((course, index) => {
+                const selectedSectionId = selections[course.name];
+                if (selectedSectionId) {
+                    const sectionData = course.sections.find(s => s.id === selectedSectionId);
+                    if (sectionData) {
+                        sectionData.sessions.forEach(session => {
+                            activeSessions.push({
+                                ...session,
+                                courseName: course.name,
+                                sectionId: sectionData.id,
+                                colorClass: blockColors[index % blockColors.length]
+                            });
+                        });
+                    }
+                }
+            });
+
+            return (
+                <div className="flex flex-col xl:flex-row gap-6 max-w-[1600px] w-full mx-auto bg-white p-6 rounded-xl shadow-lg border border-gray-200 h-full overflow-hidden">
+                    
+                    {/* Panel Izquierdo: Formularios de Selección */}
+                    <div className="w-full xl:w-1/4 flex flex-col gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200 overflow-y-auto">
+                        <h2 className="text-xl font-bold text-gray-800 mb-2 border-b border-gray-300 pb-2">6to Semestre - Plan 2024</h2>
+                        <p className="text-xs text-gray-500 mb-2">Selecciona las secciones para armar tu horario. Los bloques que se crucen se sobrepondrán visualmente.</p>
+                        
+                        {courses.map(course => (
+                            <div key={course.name} className="flex flex-col gap-1">
+                                <label className="font-semibold text-sm text-gray-700">{course.name}</label>
+                                <select 
+                                    className="border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-shadow cursor-pointer"
+                                    value={selections[course.name] || ""}
+                                    onChange={(e) => handleSelect(course.name, e.target.value)}
+                                >
+                                    <option value="">-- Sin asignar --</option>
+                                    {course.sections.map(sec => (
+                                        <option key={sec.id} value={sec.id}>{sec.id}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        ))}
+                        <div className="mt-auto pt-4 border-t border-gray-300">
+                            <button 
+                                className="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md transition-colors text-sm"
+                                onClick={() => setSelections({})}
+                            >
+                                Limpiar Horario
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Panel Derecho: Cuadrícula Visual del Horario */}
+                    <div className="w-full xl:w-3/4 overflow-y-auto overflow-x-auto rounded-lg border border-gray-300 relative bg-white">
+                        <div className="min-w-[800px] relative">
+                            
+                            {/* Cabecera pegajosa con los Días de la Semana */}
+                            <div className="grid grid-cols-[60px_1fr_1fr_1fr_1fr_1fr_1fr] border-b-2 border-gray-300 py-3 bg-gray-50 sticky top-0 z-40 shadow-sm">
+                                <div className="text-center font-bold text-gray-500 text-sm self-center">Hora</div>
+                                {daysOfWeek.map(day => (
+                                    <div key={day} className="text-center font-bold text-gray-800">{day}</div>
+                                ))}
+                            </div>
+
+                            {/* Superficie de la Cuadrícula */}
+                            {/* 16 horas en total (de 7:00 a 22:00 = 15 bloques de 50px) */}
+                            <div className="grid grid-cols-[60px_1fr_1fr_1fr_1fr_1fr_1fr] relative grid-bg h-[750px]">
+                                
+                                {/* Eje Y: Horas */}
+                                <div className="border-r border-gray-200 relative bg-white z-10">
+                                    {[...Array(16)].map((_, i) => (
+                                        <div key={i} className="absolute w-full text-right pr-2 text-xs font-medium text-gray-400" style={{ top: `${i * 50}px`, transform: 'translateY(-50%)' }}>
+                                            {i + 7}:00
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Columnas de los Días y renderizado de bloques */}
+                                {daysOfWeek.map((day, dIndex) => (
+                                    <div key={day} className="relative border-r border-gray-200 last:border-r-0">
+                                        {activeSessions.filter(s => s.day === dIndex + 1).map((s, i) => {
+                                            const pixelsPerHour = 50;
+                                            const startHourOffset = s.start - 7;
+                                            const duration = s.end - s.start;
+                                            
+                                            return (
+                                                <div 
+                                                    key={i}
+                                                    className={`absolute w-[94%] left-[3%] rounded-md shadow-sm p-2 text-xs overflow-hidden border-2 ${s.colorClass} opacity-85 hover:opacity-100 hover:z-30 hover:shadow-md transition-all cursor-default flex flex-col justify-start`}
+                                                    style={{ 
+                                                        top: `${startHourOffset * pixelsPerHour}px`, 
+                                                        height: `${duration * pixelsPerHour}px` 
+                                                    }}
+                                                    title={`${s.courseName}\n${s.sectionId}\n${formatTime(s.start)} - ${formatTime(s.end)}`}
+                                                >
+                                                    <div className="font-bold text-gray-900 leading-tight">{s.courseName}</div>
+                                                    <div className="font-semibold text-[10px] mt-1 text-gray-800 leading-tight">{s.sectionId}</div>
+                                                    <div className="text-[10px] mt-auto font-medium text-gray-700 bg-white/50 inline-block px-1 rounded w-max">
+                                                        {formatTime(s.start)} - {formatTime(s.end)}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<TimetableApp />);
+    </script>
+</body>
+</html>
