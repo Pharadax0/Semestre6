@@ -4,27 +4,34 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Planificador de Horarios - Sexto Semestre</title>
-    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        .grid-bg { 
-            background-image: repeating-linear-gradient(transparent, transparent 49px, #e5e7eb 50px); 
-            background-size: 100% 50px; 
+        .grid-bg {
+            background-image: repeating-linear-gradient(transparent, transparent 49px, #e5e7eb 50px);
+            background-size: 100% 50px;
         }
         /* Custom scrollbar para mejor apariencia */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Asegura que los colores de los bloques se vean también al imprimir */
+        @media print {
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            body { background: white !important; }
+        }
     </style>
 </head>
-<body class="bg-gray-100 p-4 md:p-8 font-sans text-gray-800 h-screen overflow-hidden flex flex-col">
-    
-    <div id="root" class="h-full flex flex-col"></div>
+<body class="bg-gray-100 p-4 md:p-8 font-sans text-gray-800 min-h-screen flex flex-col print:p-0 print:bg-white">
 
-    <script type="text/babel">
+    <div id="root"></div>
+
+    <script>
+        const h = React.createElement;
+
         // Base de datos de cursos y secciones extraída del "Semestral Derecho - Lima.pdf" (Sexto Semestre)
         // Las horas se representan en formato decimal (ej: 18.25 = 18:15 hrs)
         // Datos verificados directamente contra las imágenes del PDF oficial (Semestral Derecho - Lima, Sexto Semestre)
@@ -86,6 +93,8 @@
         // Paleta de colores para diferenciar fácilmente cada curso
         const blockColors = ["bg-blue-100 border-blue-400", "bg-emerald-100 border-emerald-400", "bg-amber-100 border-amber-400", "bg-purple-100 border-purple-400", "bg-rose-100 border-rose-400", "bg-indigo-100 border-indigo-400", "bg-cyan-100 border-cyan-400"];
 
+        const STORAGE_KEY = "horarioSeleccionadoSextoSemestre";
+
         // Función auxiliar para convertir hora decimal (18.25) a texto (18:15)
         const formatTime = (decimalTime) => {
             const hrs = Math.floor(decimalTime);
@@ -95,128 +104,200 @@
         };
 
         function TimetableApp() {
-            // Estado para almacenar las secciones seleccionadas por el usuario
             const [selections, setSelections] = React.useState({});
+            const [loaded, setLoaded] = React.useState(false);
 
-            // Actualiza el estado cuando se selecciona una opción en el menú
+            // Al cargar la página, recupera la última selección guardada en este navegador
+            React.useEffect(() => {
+                try {
+                    const saved = window.localStorage.getItem(STORAGE_KEY);
+                    if (saved) {
+                        setSelections(JSON.parse(saved));
+                    }
+                } catch (err) {
+                    console.warn("No se pudo cargar el horario guardado:", err);
+                } finally {
+                    setLoaded(true);
+                }
+            }, []);
+
+            // Cada vez que cambie la selección (después de la carga inicial), la guarda
+            React.useEffect(() => {
+                if (!loaded) return;
+                try {
+                    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(selections));
+                } catch (err) {
+                    console.warn("No se pudo guardar el horario:", err);
+                }
+            }, [selections, loaded]);
+
+            // Devuelve las sesiones activas de todos los cursos, excepto el curso indicado
+            // (para no comparar una sección de un curso contra sí misma)
+            const getActiveSessionsExcluding = (excludeCourseName) => {
+                const list = [];
+                courses.forEach(c => {
+                    if (c.name === excludeCourseName) return;
+                    const selId = selections[c.name];
+                    if (!selId) return;
+                    const sec = c.sections.find(s => s.id === selId);
+                    if (sec) {
+                        sec.sessions.forEach(sess => list.push(sess));
+                    }
+                });
+                return list;
+            };
+
+            // Determina si una sección se cruza con alguna sesión ya seleccionada de OTRO curso
+            const sectionHasConflict = (course, section) => {
+                const others = getActiveSessionsExcluding(course.name);
+                return section.sessions.some(sess =>
+                    others.some(o => o.day === sess.day && sess.start < o.end && o.start < sess.end)
+                );
+            };
+
             const handleSelect = (courseName, sectionId) => {
+                if (sectionId) {
+                    const course = courses.find(c => c.name === courseName);
+                    const sec = course && course.sections.find(s => s.id === sectionId);
+                    // Por seguridad: si por alguna razón se intenta elegir una sección que
+                    // se cruza con otra ya seleccionada, se ignora el cambio.
+                    if (sec && sectionHasConflict(course, sec)) return;
+                }
                 setSelections(prev => ({ ...prev, [courseName]: sectionId }));
+            };
+
+            const handleClear = () => {
+                setSelections({});
+                try {
+                    window.localStorage.removeItem(STORAGE_KEY);
+                } catch (err) {
+                    console.warn("No se pudo limpiar el horario guardado:", err);
+                }
+            };
+
+            const handlePrint = () => {
+                window.print();
             };
 
             // Filtrar y preparar las sesiones de los cursos seleccionados
             const activeSessions = [];
-            courses.forEach((course, index) => {
+            courses.forEach((course, cIndex) => {
                 const selectedSectionId = selections[course.name];
                 if (selectedSectionId) {
                     const sectionData = course.sections.find(s => s.id === selectedSectionId);
                     if (sectionData) {
-                        sectionData.sessions.forEach(session => {
+                        sectionData.sessions.forEach((session, sIdx) => {
                             activeSessions.push({
                                 ...session,
                                 courseName: course.name,
                                 sectionId: sectionData.id,
-                                colorClass: blockColors[index % blockColors.length]
+                                colorClass: blockColors[cIndex % blockColors.length],
+                                // Identificador estable (no depende del orden de renderizado)
+                                uid: course.name + "__" + sectionData.id + "__" + sIdx
                             });
                         });
                     }
                 }
             });
 
-            return (
-                <div className="flex flex-col xl:flex-row gap-6 max-w-[1600px] w-full mx-auto bg-white p-6 rounded-xl shadow-lg border border-gray-200 h-full overflow-hidden">
-                    
-                    {/* Panel Izquierdo: Formularios de Selección */}
-                    <div className="w-full xl:w-1/4 flex flex-col gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200 overflow-y-auto">
-                        <h2 className="text-xl font-bold text-gray-800 mb-2 border-b border-gray-300 pb-2">6to Semestre - Plan 2024</h2>
-                        <p className="text-xs text-gray-500 mb-2">Selecciona las secciones para armar tu horario. Los bloques que se crucen se sobrepondrán visualmente.</p>
-                        
-                        {courses.map(course => (
-                            <div key={course.name} className="flex flex-col gap-1">
-                                <label className="font-semibold text-sm text-gray-700">{course.name}</label>
-                                <select 
-                                    className="border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-shadow cursor-pointer"
-                                    value={selections[course.name] || ""}
-                                    onChange={(e) => handleSelect(course.name, e.target.value)}
-                                >
-                                    <option value="">-- Sin asignar --</option>
-                                    {course.sections.map(sec => (
-                                        <option key={sec.id} value={sec.id}>{sec.id}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        ))}
-                        <div className="mt-auto pt-4 border-t border-gray-300">
-                            <button 
-                                className="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md transition-colors text-sm"
-                                onClick={() => setSelections({})}
-                            >
-                                Limpiar Horario
-                            </button>
-                        </div>
-                    </div>
+            return h("div", { className: "flex flex-col xl:flex-row gap-6 max-w-[1600px] w-full mx-auto bg-white p-6 rounded-xl shadow-lg border border-gray-200 print:shadow-none print:border-0 print:p-0 print:gap-2" },
 
-                    {/* Panel Derecho: Cuadrícula Visual del Horario */}
-                    <div className="w-full xl:w-3/4 overflow-y-auto overflow-x-auto rounded-lg border border-gray-300 relative bg-white">
-                        <div className="min-w-[800px] relative">
-                            
-                            {/* Cabecera pegajosa con los Días de la Semana */}
-                            <div className="grid grid-cols-[60px_1fr_1fr_1fr_1fr_1fr_1fr] border-b-2 border-gray-300 py-3 bg-gray-50 sticky top-0 z-40 shadow-sm">
-                                <div className="text-center font-bold text-gray-500 text-sm self-center">Hora</div>
-                                {daysOfWeek.map(day => (
-                                    <div key={day} className="text-center font-bold text-gray-800">{day}</div>
-                                ))}
-                            </div>
+                // Panel Izquierdo: Formularios de Selección (se oculta al imprimir)
+                h("div", { className: "w-full xl:w-1/4 flex flex-col gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200 print:hidden" },
+                    h("h2", { className: "text-xl font-bold text-gray-800 mb-2 border-b border-gray-300 pb-2" }, "6to Semestre - Plan 2024"),
+                    h("p", { className: "text-xs text-gray-500 mb-2" },
+                        "Selecciona las secciones para armar tu horario. Las opciones que se crucen con lo ya elegido aparecerán deshabilitadas. Tu selección se guarda automáticamente en este navegador."
+                    ),
+                    ...courses.map(course =>
+                        h("div", { key: course.name, className: "flex flex-col gap-1" },
+                            h("label", { className: "font-semibold text-sm text-gray-700" }, course.name),
+                            h("select", {
+                                className: "border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-shadow cursor-pointer",
+                                value: selections[course.name] || "",
+                                onChange: (e) => handleSelect(course.name, e.target.value)
+                            },
+                                h("option", { value: "" }, "-- Sin asignar --"),
+                                ...course.sections.map(sec => {
+                                    const conflict = sectionHasConflict(course, sec);
+                                    return h("option", { key: sec.id, value: sec.id, disabled: conflict },
+                                        sec.id + (conflict ? " (cruce - no disponible)" : "")
+                                    );
+                                })
+                            )
+                        )
+                    ),
+                    h("div", { className: "mt-auto pt-4 border-t border-gray-300 flex flex-col gap-2" },
+                        h("button", {
+                            className: "w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md transition-colors text-sm",
+                            onClick: handleClear
+                        }, "Limpiar Horario"),
+                        h("button", {
+                            className: "w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition-colors text-sm",
+                            onClick: handlePrint
+                        }, "Exportar / Imprimir")
+                    )
+                ),
 
-                            {/* Superficie de la Cuadrícula */}
-                            {/* 16 horas en total (de 7:00 a 22:00 = 15 bloques de 50px) */}
-                            <div className="grid grid-cols-[60px_1fr_1fr_1fr_1fr_1fr_1fr] relative grid-bg h-[750px]">
-                                
-                                {/* Eje Y: Horas */}
-                                <div className="border-r border-gray-200 relative bg-white z-10">
-                                    {[...Array(16)].map((_, i) => (
-                                        <div key={i} className="absolute w-full text-right pr-2 text-xs font-medium text-gray-400" style={{ top: `${i * 50}px`, transform: 'translateY(-50%)' }}>
-                                            {i + 7}:00
-                                        </div>
-                                    ))}
-                                </div>
+                // Panel Derecho: Cuadrícula Visual del Horario
+                h("div", { className: "w-full xl:w-3/4 overflow-x-auto rounded-lg border border-gray-300 relative bg-white print:w-full print:border-0 print:overflow-visible" },
+                    h("div", { className: "min-w-[800px] relative print:min-w-0" },
 
-                                {/* Columnas de los Días y renderizado de bloques */}
-                                {daysOfWeek.map((day, dIndex) => (
-                                    <div key={day} className="relative border-r border-gray-200 last:border-r-0">
-                                        {activeSessions.filter(s => s.day === dIndex + 1).map((s, i) => {
-                                            const pixelsPerHour = 50;
-                                            const startHourOffset = s.start - 7;
-                                            const duration = s.end - s.start;
-                                            
-                                            return (
-                                                <div 
-                                                    key={i}
-                                                    className={`absolute w-[94%] left-[3%] rounded-md shadow-sm p-2 text-xs overflow-hidden border-2 ${s.colorClass} opacity-85 hover:opacity-100 hover:z-30 hover:shadow-md transition-all cursor-default flex flex-col justify-start`}
-                                                    style={{ 
-                                                        top: `${startHourOffset * pixelsPerHour}px`, 
-                                                        height: `${duration * pixelsPerHour}px` 
-                                                    }}
-                                                    title={`${s.courseName}\n${s.sectionId}\n${formatTime(s.start)} - ${formatTime(s.end)}`}
-                                                >
-                                                    <div className="font-bold text-gray-900 leading-tight">{s.courseName}</div>
-                                                    <div className="font-semibold text-[10px] mt-1 text-gray-800 leading-tight">{s.sectionId}</div>
-                                                    <div className="text-[10px] mt-auto font-medium text-gray-700 bg-white/50 inline-block px-1 rounded w-max">
-                                                        {formatTime(s.start)} - {formatTime(s.end)}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                        // Cabecera con los Días de la Semana
+                        h("div", { className: "grid grid-cols-[60px_1fr_1fr_1fr_1fr_1fr_1fr] border-b-2 border-gray-300 py-3 bg-gray-50 sticky top-0 z-40 shadow-sm print:static print:shadow-none" },
+                            h("div", { className: "text-center font-bold text-gray-500 text-sm self-center" }, "Hora"),
+                            ...daysOfWeek.map(day =>
+                                h("div", { key: day, className: "text-center font-bold text-gray-800" }, day)
+                            )
+                        ),
+
+                        // Superficie de la Cuadrícula (16 horas, de 7:00 a 22:00)
+                        h("div", { className: "grid grid-cols-[60px_1fr_1fr_1fr_1fr_1fr_1fr] relative grid-bg h-[750px]" },
+
+                            // Eje Y: Horas
+                            h("div", { className: "border-r border-gray-200 relative bg-white z-10" },
+                                ...[...Array(16)].map((_, i) =>
+                                    h("div", {
+                                        key: i,
+                                        className: "absolute w-full text-right pr-2 text-xs font-medium text-gray-400",
+                                        style: { top: (i * 50) + "px", transform: "translateY(-50%)" }
+                                    }, (i + 7) + ":00")
+                                )
+                            ),
+
+                            // Columnas de los Días y renderizado de bloques
+                            ...daysOfWeek.map((day, dIndex) =>
+                                h("div", { key: day, className: "relative border-r border-gray-200 last:border-r-0" },
+                                    ...activeSessions.filter(s => s.day === dIndex + 1).map(s => {
+                                        const pixelsPerHour = 50;
+                                        const startHourOffset = s.start - 7;
+                                        const duration = s.end - s.start;
+
+                                        return h("div", {
+                                            key: s.uid,
+                                            className: "absolute w-[94%] left-[3%] rounded-md shadow-sm p-2 text-xs overflow-hidden border-2 " + s.colorClass + " opacity-85 hover:opacity-100 hover:z-30 hover:shadow-md transition-all cursor-default flex flex-col justify-start",
+                                            style: {
+                                                top: (startHourOffset * pixelsPerHour) + "px",
+                                                height: (duration * pixelsPerHour) + "px"
+                                            },
+                                            title: s.courseName + "\n" + s.sectionId + "\n" + formatTime(s.start) + " - " + formatTime(s.end)
+                                        },
+                                            h("div", { className: "font-bold text-gray-900 leading-tight" }, s.courseName),
+                                            h("div", { className: "font-semibold text-[10px] mt-1 text-gray-800 leading-tight" }, s.sectionId),
+                                            h("div", { className: "text-[10px] mt-auto font-medium text-gray-700 bg-white/50 inline-block px-1 rounded w-max" },
+                                                formatTime(s.start) + " - " + formatTime(s.end)
+                                            )
+                                        );
+                                    })
+                                )
+                            )
+                        )
+                    )
+                )
             );
         }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<TimetableApp />);
+        const root = ReactDOM.createRoot(document.getElementById("root"));
+        root.render(h(TimetableApp));
     </script>
 </body>
 </html>
